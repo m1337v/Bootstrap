@@ -2,9 +2,9 @@ name: Build and Package
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "*" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "*" ]
   workflow_dispatch:
 
 jobs:
@@ -19,6 +19,7 @@ jobs:
           submodules: true
 
       - name: Install Theos
+        run: brew install sbt
         run: bash -c "$(curl -fsSL https://raw.githubusercontent.com/roothide/theos/master/bin/install-theos)"
 
       - name: Setup Environment
