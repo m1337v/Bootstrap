@@ -18,11 +18,8 @@ jobs:
         with:
           submodules: true
           
-      - name: Install dependencies
-        run: brew install sbt
-
       - name: Install Theos
-        run: bash -c "$(curl -fsSL https://raw.githubusercontent.com/roothide/theos/master/bin/install-theos)"
+        run: bash -c "$(curl -fsSL https://raw.githubusercontent.com/m1337v/theos/master/bin/install-theos)"
 
       - name: Setup Environment
         run: echo "THEOS=~/theos" >> $GITHUB_ENV
