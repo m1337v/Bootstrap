@@ -121,7 +121,7 @@
         return YES;
     }
     
-    if(!isDefaultInstallationPath(app.bundleURL.path)) {
+    if(!isRemovableBundlePath(app.bundleURL.path.fileSystemRepresentation)) {
         return NO;
     }
     
@@ -147,7 +147,7 @@
     
 //        if(app.isHiddenApp) continue;
                 
-        if(![app.bundleURL.path hasPrefix:@"/Applications/"] && !isDefaultInstallationPath(app.bundleURL.path)) {
+        if(![app.bundleURL.path hasPrefix:@"/Applications/"] && !isRemovableBundlePath(app.bundleURL.path.fileSystemRepresentation)) {
             //sysapp installed as jailbreak apps
             NSString* sysPath = [@"/Applications/" stringByAppendingPathComponent:app.bundleURL.path.lastPathComponent];
             if(![NSFileManager.defaultManager fileExistsAtPath:sysPath])
@@ -316,6 +316,12 @@ NSArray* unsupportedBundleIDs = @[
     NSIndexPath *indexPath = [self.tableView indexPathForRowAtPoint:pos];
     BOOL enabled = switchInCell.on;
     AppInfo* app = isFiltered? filteredApps[indexPath.row] : appsArray[indexPath.row];
+    
+    if(enabled && isBlacklistedApp(app.bundleIdentifier.UTF8String)) {
+        [AppDelegate showMesage:Localized(@"This app is blacklisted by RootHide Manager, please unblacklist it first.") title:@""];
+        [switchInCell setOn:NO];
+        return;
+    }
 
     dispatch_async(dispatch_get_global_queue(0, 0), ^{
         [AppDelegate showHudMsg:Localized(@"Applying")];
@@ -326,9 +332,9 @@ NSArray* unsupportedBundleIDs = @[
         NSString* log=nil;
         NSString* err=nil;
         if(enabled) {
-            status = spawnRoot(NSBundle.mainBundle.executablePath, @[@"enableapp",app.bundleURL.path], &log, &err);
+            status = spawn_root(NSBundle.mainBundle.executablePath, @[@"enableapp",app.bundleURL.path], &log, &err);
         } else {
-            status = spawnRoot(NSBundle.mainBundle.executablePath, @[@"disableapp",app.bundleURL.path], &log, &err);
+            status = spawn_root(NSBundle.mainBundle.executablePath, @[@"disableapp",app.bundleURL.path], &log, &err);
         }
         
         if(status != 0) {

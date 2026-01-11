@@ -30,6 +30,9 @@
 		<string>AGXDeviceUserClient</string>
 		<string>IOHDIXControllerUserClient</string>
 		<string>IOSurfaceRootUserClient</string>
+
+		<!-- TaskPortHaxx prepare -->
+		<string>AppleMobileFileIntegrityUserClient</string>
 	</array>
     
 	<key>com.apple.private.persona-mgmt</key>
@@ -51,6 +54,16 @@
 
     <key>com.apple.lsapplicationworkspace.rebuildappdatabases</key>
     <true/>
+
+	<!-- TaskPortHaxx prepare -->
+	<key>com.apple.private.amfi.can-load-trust-cache</key>
+	<true/>
+	<key>com.apple.private.pmap.load-trust-cache</key>
+	<array>
+		<string>global.pdi</string>
+		<string>personalized.pdi</string>
+		<string>personalized.ddi</string>
+	</array>
     
 </dict>
 </plist>

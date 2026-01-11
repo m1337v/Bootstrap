@@ -2,8 +2,7 @@
 #define utils_h
 
 #import <Foundation/Foundation.h>
-
-extern const char** environ;
+#include "commlib.h"
 
 uint64_t jbrand();
 
@@ -11,26 +10,17 @@ uint64_t jbrand_new();
 
 NSString* find_jbroot(BOOL force);
 
-NSString* jbroot(NSString *path);
-
 int is_jbroot_name(const char* name);
+
+const char* jbroot(const char* path);
+
+NSString* __attribute__((overloadable)) jbroot(NSString *path);
 
 NSString* rootfsPrefix(NSString* path);
 
 NSString* getBootSession();
 
-int spawn(const char* path, const char** argv, const char** envp, void(^std_out)(char*,int), void(^std_err)(char*,int));
-
-int spawnBootstrap(const char** argv, NSString** stdOut, NSString** stdErr);
-
-int spawnRoot(NSString* path, NSArray* args, NSString** stdOut, NSString** stdErr);
-
-void machoGetInfo(FILE* candidateFile, bool *isMachoOut, bool *isLibraryOut);
-
-BOOL isDefaultInstallationPath(NSString* _path);
-
-void killAllForBundle(const char* bundlePath);
-void killAllForExecutable(const char* path);
+NSString* getTeamIDFromBinaryAtPath(NSString *binaryPath);
 
 @interface _LSApplicationState : NSObject
 - (BOOL)isValid;
@@ -67,6 +57,7 @@ void killAllForExecutable(const char* path);
 
 @interface LSApplicationWorkspace : NSObject
 + (id)defaultWorkspace;
+- (BOOL)unregisterApplication:(NSURL *)url;
 - (BOOL)openApplicationWithBundleID:(id)arg1;
 - (NSArray<LSApplicationProxy*>*)allApplications;
 - (NSArray<LSApplicationProxy*>*)allInstalledApplications;

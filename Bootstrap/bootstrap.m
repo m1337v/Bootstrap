@@ -13,6 +13,10 @@ extern int decompress_tar_zstd(const char* src_file_path, const char* dst_file_p
 
 int getCFMajorVersion()
 {
+    if(@available(iOS 16.0, *)) {
+        return 1900;
+    }
+    
     return ((int)kCFCoreFoundationVersionNumber / 100) * 100;
 }
 
@@ -25,20 +29,17 @@ void rebuildSignature(NSString *directoryPath)
     
     NSString* ldidPath = [NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"basebin/ldid"];
     NSString* fastSignPath = [NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"basebin/fastPathSign"];
-    NSString* entitlementsPath = [NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"basebin/nickchan.entitlements"];
+    NSString* entitlementsPath = [NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"basebin/entitlements/nickchan.entitlements"];
     NSString* ldidEntitlements = [NSString stringWithFormat:@"-S%@", entitlementsPath];
     
     for (NSURL *enumURL in directoryEnumerator) {
         @autoreleasepool {
-            NSNumber *isSymlink;
-            [enumURL getResourceValue:&isSymlink forKey:NSURLIsSymbolicLinkKey error:nil];
-            if (isSymlink && ![isSymlink boolValue]) {
-                
-                FILE *fp = fopen(enumURL.fileSystemRepresentation, "rb");
-                ASSERT(fp != NULL);
-                
+            NSNumber* isFile=nil;
+            [enumURL getResourceValue:&isFile forKey:NSURLIsRegularFileKey error:nil];
+            if (isFile && [isFile boolValue]) {
+
                 bool ismacho=false, islib=false;
-                machoGetInfo(fp, &ismacho, &islib);
+                ASSERT(machoGetInfo(enumURL.fileSystemRepresentation, &ismacho, &islib));
                 
                 if(ismacho) {
                     
@@ -48,14 +49,12 @@ void rebuildSignature(NSString *directoryPath)
                     
                     if(!islib) {
                         libCount++;
-                        ASSERT(spawnRoot(ldidPath, @[@"-M", ldidEntitlements, enumURL.path], nil, nil) == 0);
+                        //note: only basebin/ldid -M supports deep merge
+                        ASSERT(spawn_root(ldidPath, @[@"-M", ldidEntitlements, enumURL.path], nil, nil) == 0);
                     }
                     
-                    ASSERT(spawnRoot(fastSignPath, @[enumURL.path], nil, nil) == 0);
+                    ASSERT(spawn_root(fastSignPath, @[enumURL.path], nil, nil) == 0);
                 }
-                
-                fclose(fp);
-
             }
         }
     }
@@ -64,24 +63,39 @@ void rebuildSignature(NSString *directoryPath)
 
 }
 
-int disableRootHideBlacklist()
+int fixPackageSources()
 {
-    NSString* roothideDir = jbroot(@"/var/mobile/Library/RootHide");
-    if(![NSFileManager.defaultManager fileExistsAtPath:roothideDir]) {
-        NSDictionary* attr = @{NSFilePosixPermissions:@(0755), NSFileOwnerAccountID:@(501), NSFileGroupOwnerAccountID:@(501)};
-        ASSERT([NSFileManager.defaultManager createDirectoryAtPath:roothideDir withIntermediateDirectories:YES attributes:attr error:nil]);
+    NSArray* sileoSources = [NSFileManager.defaultManager directoryContentsAtPath:jbroot(@"/etc/apt/sources.list.d")];
+    ASSERT(sileoSources != NULL);
+    for(NSString* item in sileoSources)
+    {
+        NSString* source = [jbroot(@"/etc/apt/sources.list.d") stringByAppendingPathComponent:item];
+        NSString* sileoList = [NSString stringWithContentsOfFile:source encoding:NSUTF8StringEncoding error:nil];
+        ASSERT(sileoList != NULL);
+        
+        if([sileoList containsString:@"iphoneos-arm64e/2000"]) {
+            if([NSFileManager.defaultManager fileExistsAtPath:jbroot(@"/var/lib/apt/lists")])
+                ASSERT([NSFileManager.defaultManager removeItemAtPath:jbroot(@"/var/lib/apt/lists") error:nil]);
+            if([NSFileManager.defaultManager fileExistsAtPath:jbroot(@"/var/lib/apt/sileolists")])
+                ASSERT([NSFileManager.defaultManager removeItemAtPath:jbroot(@"/var/lib/apt/sileolists") error:nil]);
+        }
+        
+        sileoList = [sileoList stringByReplacingOccurrencesOfString:@"iphoneos-arm64e/2000" withString:@"iphoneos-arm64e/1900"];
+        
+        ASSERT([sileoList writeToFile:source atomically:YES encoding:NSUTF8StringEncoding error:nil]);
     }
     
-    ASSERT(chmod(roothideDir.fileSystemRepresentation, 0755)==0);
-    ASSERT(chown(roothideDir.fileSystemRepresentation, 501, 501)==0);
     
-    NSString *configFilePath = jbroot(@"/var/mobile/Library/RootHide/RootHideConfig.plist");
-    NSMutableDictionary* defaults = [NSMutableDictionary dictionaryWithContentsOfFile:configFilePath];
-    
-    if(!defaults) defaults = [[NSMutableDictionary alloc] init];
-    [defaults setValue:@YES forKey:@"blacklistDisabled"];
-    
-    ASSERT([defaults writeToFile:configFilePath atomically:YES]);
+    NSString* zebraList = [NSString stringWithContentsOfFile:jbroot(@"/var/mobile/Library/Application Support/xyz.willy.Zebra/sources.list") encoding:NSUTF8StringEncoding error:nil];
+    ASSERT(zebraList != NULL);
+    if([zebraList containsString:@"iphoneos-arm64e/2000"]) {
+        if([NSFileManager.defaultManager fileExistsAtPath:jbroot(@"/var/mobile/Library/Application Support/xyz.willy.Zebra/lists")])
+            ASSERT([NSFileManager.defaultManager removeItemAtPath:jbroot(@"/var/mobile/Library/Application Support/xyz.willy.Zebra/lists") error:nil]);
+        if([NSFileManager.defaultManager fileExistsAtPath:jbroot(@"/var/mobile/Library/Application Support/xyz.willy.Zebra/zebra.db")])
+            ASSERT([NSFileManager.defaultManager removeItemAtPath:jbroot(@"/var/mobile/Library/Application Support/xyz.willy.Zebra/zebra.db") error:nil]);
+    }
+    zebraList = [zebraList stringByReplacingOccurrencesOfString:@"iphoneos-arm64e/2000" withString:@"iphoneos-arm64e/1900"];
+    ASSERT([zebraList writeToFile:jbroot(@"/var/mobile/Library/Application Support/xyz.willy.Zebra/sources.list") atomically:YES encoding:NSUTF8StringEncoding error:nil]);
     
     return 0;
 }
@@ -90,12 +104,15 @@ int buildPackageSources()
 {
     NSFileManager* fm = NSFileManager.defaultManager;
     
-    ASSERT([[NSString stringWithFormat:@(DEFAULT_SOURCES), getCFMajorVersion()] writeToFile:jbroot(@"/etc/apt/sources.list.d/default.sources") atomically:YES encoding:NSUTF8StringEncoding error:nil]);
-    
-    //Users in some regions seem to be unable to access github.io
-    SYSLOG("locale=%@", [NSUserDefaults.appDefaults valueForKey:@"locale"]);
-    if([[NSUserDefaults.appDefaults valueForKey:@"locale"] isEqualToString:@"CN"]) {
-        ASSERT([[NSString stringWithFormat:@(ALT_SOURCES), getCFMajorVersion()] writeToFile:jbroot(@"/etc/apt/sources.list.d/sileo.sources") atomically:YES encoding:NSUTF8StringEncoding error:nil]);
+    if(![fm fileExistsAtPath:jbroot(@"/etc/apt/sources.list.d/default.sources")])
+    {
+        ASSERT([[NSString stringWithFormat:@(DEFAULT_SOURCES), getCFMajorVersion()] writeToFile:jbroot(@"/etc/apt/sources.list.d/default.sources") atomically:YES encoding:NSUTF8StringEncoding error:nil]);
+        
+        //    //Users in some regions seem to be unable to access github.io
+        //    SYSLOG("locale=%@", [NSUserDefaults.appDefaults valueForKey:@"locale"]);
+        //    if([[NSUserDefaults.appDefaults valueForKey:@"locale"] isEqualToString:@"CN"]) {
+        //        ASSERT([[NSString stringWithFormat:@(ALT_SOURCES), getCFMajorVersion()] writeToFile:jbroot(@"/etc/apt/sources.list.d/sileo.sources") atomically:YES encoding:NSUTF8StringEncoding error:nil]);
+        //    }
     }
     
     if(![fm fileExistsAtPath:jbroot(@"/var/mobile/Library/Application Support/xyz.willy.Zebra")])
@@ -104,7 +121,10 @@ int buildPackageSources()
         ASSERT([fm createDirectoryAtPath:jbroot(@"/var/mobile/Library/Application Support/xyz.willy.Zebra") withIntermediateDirectories:YES attributes:attr error:nil]);
     }
     
-    ASSERT([[NSString stringWithFormat:@(ZEBRA_SOURCES), getCFMajorVersion()] writeToFile:jbroot(@"/var/mobile/Library/Application Support/xyz.willy.Zebra/sources.list") atomically:YES encoding:NSUTF8StringEncoding error:nil]);
+    if(![fm fileExistsAtPath:jbroot(@"/var/mobile/Library/Application Support/xyz.willy.Zebra/sources.list")])
+    {
+        ASSERT([[NSString stringWithFormat:@(ZEBRA_SOURCES), getCFMajorVersion()] writeToFile:jbroot(@"/var/mobile/Library/Application Support/xyz.willy.Zebra/sources.list") atomically:YES encoding:NSUTF8StringEncoding error:nil]);
+    }
     
     return 0;
 }
@@ -121,7 +141,7 @@ int rebuildBasebin()
     ASSERT([fm copyItemAtPath:basebinPath toPath:jbroot(@"/basebin") error:nil]);
     
     unlink(jbroot(@"/basebin/.jbroot").fileSystemRepresentation);
-    ASSERT([fm createSymbolicLinkAtPath:jbroot(@"/basebin/.jbroot") withDestinationPath:jbroot(@"/") error:nil]);
+    ASSERT([fm createSymbolicLinkAtPath:jbroot(@"/basebin/.jbroot") withDestinationPath:@"../.jbroot" error:nil]); //use a relative path so libvroot won't remove it
     
     return 0;
 }
@@ -130,7 +150,7 @@ int startBootstrapServer()
 {
     NSString* log=nil;
     NSString* err=nil;
-    int status = spawnRoot(jbroot(@"/basebin/bootstrapd"), @[@"daemon",@"-f"], &log, &err);
+    int status = spawn_root(jbroot(@"/basebin/bootstrapd"), @[@"daemon",@"-f"], &log, &err);
     if(status != 0) {
         STRAPLOG("bootstrap server load faild(%d):\n%@\nERR:%@", status, log, err);
         ABORT();
@@ -140,7 +160,7 @@ int startBootstrapServer()
     
     sleep(1);
     
-     status = spawnRoot(jbroot(@"/basebin/bootstrapd"), @[@"check"], &log, &err);
+     status = spawn_root(jbroot(@"/basebin/bsctl"), @[@"check"], &log, &err);
     if(status != 0) {
         STRAPLOG("bootstrap server check faild(%d):\n%@\nERR:%@", status, log, err);
         ABORT();
@@ -177,7 +197,7 @@ int InstallBootstrap(NSString* jbroot_path)
     ASSERT(decompress_tar_zstd(bootstrapZstFile.fileSystemRepresentation, bootstrapTarFile.fileSystemRepresentation) == 0);
     
     NSString* tarPath = [NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"tar"];
-    ASSERT(spawnRoot(tarPath, @[@"-xpkf", bootstrapTarFile, @"-C", jbroot_path], nil, nil) == 0);
+    ASSERT(spawn_root(tarPath, @[@"-xpkf", bootstrapTarFile, @"-C", jbroot_path], nil, nil) == 0);
     
     STRAPLOG("rebuild boostrap binaries");
     rebuildSignature(jbroot_path);
@@ -209,7 +229,7 @@ int InstallBootstrap(NSString* jbroot_path)
     STRAPLOG("Status: Finalizing Bootstrap");
     NSString* log=nil;
     NSString* err=nil;
-    int status = spawnBootstrap((char*[]){"/bin/sh", "/prep_bootstrap.sh", NULL}, &log, &err);
+    int status = spawn_bootstrap_binary((char*[]){"/bin/sh", "/prep_bootstrap.sh", NULL}, &log, &err);
     if(status != 0) {
         STRAPLOG("faild(%d):%@\nERR:%@", status, log, err);
         ABORT();
@@ -226,25 +246,28 @@ int InstallBootstrap(NSString* jbroot_path)
     
     STRAPLOG("Status: Installing Packages");
     NSString* libkrw0_dummy = [NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"libkrw0-dummy.deb"];
-    ASSERT(spawnBootstrap((char*[]){"/usr/bin/dpkg", "-i", rootfsPrefix(libkrw0_dummy).fileSystemRepresentation, NULL}, nil, nil) == 0);
+    ASSERT(spawn_bootstrap_binary((char*[]){"/usr/bin/dpkg", "-i", rootfsPrefix(libkrw0_dummy).fileSystemRepresentation, NULL}, nil, nil) == 0);
     
     NSString* sileoDeb = [NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"sileo.deb"];
-    ASSERT(spawnBootstrap((char*[]){"/usr/bin/dpkg", "-i", rootfsPrefix(sileoDeb).fileSystemRepresentation, NULL}, nil, nil) == 0);
-    ASSERT(spawnBootstrap((char*[]){"/usr/bin/uicache", "-p", "/Applications/Sileo.app", NULL}, nil, nil) == 0);
+    ASSERT(spawn_bootstrap_binary((char*[]){"/usr/bin/dpkg", "-i", rootfsPrefix(sileoDeb).fileSystemRepresentation, NULL}, nil, nil) == 0);
+    ASSERT(spawn_bootstrap_binary((char*[]){"/usr/bin/uicache", "-p", "/Applications/Sileo.app", NULL}, nil, nil) == 0);
     
     NSString* zebraDeb = [NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"zebra.deb"];
-    ASSERT(spawnBootstrap((char*[]){"/usr/bin/dpkg", "-i", rootfsPrefix(zebraDeb).fileSystemRepresentation, NULL}, nil, nil) == 0);
-    ASSERT(spawnBootstrap((char*[]){"/usr/bin/uicache", "-p", "/Applications/Zebra.app", NULL}, nil, nil) == 0);
+    ASSERT(spawn_bootstrap_binary((char*[]){"/usr/bin/dpkg", "-i", rootfsPrefix(zebraDeb).fileSystemRepresentation, NULL}, nil, nil) == 0);
+    ASSERT(spawn_bootstrap_binary((char*[]){"/usr/bin/uicache", "-p", "/Applications/Zebra.app", NULL}, nil, nil) == 0);
     
     NSString* roothideappDeb = [NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"roothideapp.deb"];
-    ASSERT(spawnBootstrap((char*[]){"/usr/bin/dpkg", "-i", rootfsPrefix(roothideappDeb).fileSystemRepresentation, NULL}, nil, nil) == 0);
-    ASSERT(spawnBootstrap((char*[]){"/usr/bin/uicache", "-p", "/Applications/RootHide.app", NULL}, nil, nil) == 0);
+    ASSERT(spawn_bootstrap_binary((char*[]){"/usr/bin/dpkg", "-i", rootfsPrefix(roothideappDeb).fileSystemRepresentation, NULL}, nil, nil) == 0);
+    ASSERT(spawn_bootstrap_binary((char*[]){"/usr/bin/uicache", "-p", "/Applications/RootHide.app", NULL}, nil, nil) == 0);
     
     ASSERT([[NSString stringWithFormat:@"%d",BOOTSTRAP_VERSION] writeToFile:jbroot(@"/.thebootstrapped") atomically:YES encoding:NSUTF8StringEncoding error:nil]);
     ASSERT([fm copyItemAtPath:jbroot(@"/.thebootstrapped") toPath:[jbroot_secondary stringByAppendingPathComponent:@".thebootstrapped"] error:nil]);
     
     STRAPLOG("Status: Bootstrap Installed");
     
+    if(@available(iOS 16.0, *)) {
+        ASSERT([[NSString new] writeToFile:jbroot(@"/var/mobile/.allow_url_schemes") atomically:YES encoding:NSUTF8StringEncoding error:nil]);
+    }
     
     return 0;
 }
@@ -323,7 +346,10 @@ int ReRandomizeBootstrap()
     STRAPLOG("Status: Updating Symlinks");
     ASSERT(fixBootstrapSymlink(@"/bin/sh") == 0);
     ASSERT(fixBootstrapSymlink(@"/usr/bin/sh") == 0);
-    ASSERT(spawnBootstrap((char*[]){"/bin/sh", "/usr/libexec/updatelinks.sh", NULL}, nil, nil) == 0);
+    ASSERT(spawn_bootstrap_binary((char*[]){"/bin/sh", "/usr/libexec/updatelinks.sh", NULL}, nil, nil) == 0);
+    
+    ASSERT(buildPackageSources() == 0);
+    ASSERT(fixPackageSources() == 0);
     
     return 0;
 }
@@ -431,7 +457,7 @@ void fixBadPatchFiles()
     }
 }
 
-void removeUnexceptPreferences()
+void removeUnexpectedPreferences()
 {
     BOOL reload = NO;
     NSArray* files = @[@".GlobalPreferences.plist", @"kCFPreferencesAnyApplication.plist"];
@@ -507,21 +533,26 @@ int bootstrap()
         
         ASSERT(ReRandomizeBootstrap() == 0);
         
-        removeUnexceptPreferences();
+        removeUnexpectedPreferences();
         fixMobileDirectories();
         fixBadPatchFiles();
     }
     
-    ASSERT(disableRootHideBlacklist()==0);
+    ASSERT(roothide_config_set_blacklist_enable(false)==0);
     
     STRAPLOG("Status: Rebuilding Apps");
     
     NSString* log=nil;
     NSString* err=nil;
-    if(spawnBootstrap((char*[]){"/bin/sh", "/basebin/rebuildapps.sh", NULL}, &log, &err) != 0) {
+    if(spawn_bootstrap_binary((char*[]){"/bin/sh", "/basebin/rebuildApps.sh", NULL}, &log, &err) != 0) {
         STRAPLOG("%@\nERR:%@", log, err);
         ABORT();
     }
+    
+    //Remove the shits triggered by uicache
+    [NSFileManager.defaultManager removeItemAtPath:@"/var/mobile/Library/SplashBoard/Snapshots/xyz.willy.Zebra" error:nil];
+    [NSFileManager.defaultManager removeItemAtPath:@"/var/mobile/Library/SplashBoard/Snapshots/com.roothide.manager" error:nil];
+    [NSFileManager.defaultManager removeItemAtPath:@"/var/mobile/Library/SplashBoard/Snapshots/org.coolstar.SileoStore" error:nil];
 
     NSDictionary* bootinfo = @{@"bootsession":getBootSession(), @"bootversion":NSBundle.mainBundle.infoDictionary[@"CFBundleShortVersionString"]};
     ASSERT([bootinfo writeToFile:jbroot(@"/basebin/.bootinfo.plist") atomically:YES]);
@@ -536,7 +567,7 @@ int unbootstrap()
     STRAPLOG("unbootstrap...");
     
     //try
-    spawnRoot(jbroot(@"/basebin/bootstrapd"), @[@"stop"], nil, nil);
+    spawn_root(jbroot(@"/basebin/bsctl"), @[@"stop"], nil, nil);
     
     //jbroot unavailable now
     
@@ -577,7 +608,7 @@ int unbootstrap()
     if(tsapp) {
         NSString* log=nil;
         NSString* err=nil;
-        if(spawnRoot([tsapp.bundleURL.path stringByAppendingPathComponent:@"trollstorehelper"], @[@"refresh"], &log, &err) != 0) {
+        if(spawn_root([tsapp.bundleURL.path stringByAppendingPathComponent:@"trollstorehelper"], @[@"refresh"], &log, &err) != 0) {
             STRAPLOG("refresh tsapps failed:%@\nERR:%@", log, err);
         }
     } else {

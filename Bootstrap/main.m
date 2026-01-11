@@ -3,7 +3,20 @@
 #include "NSUserDefaults+appDefaults.h"
 #include "common.h"
 
+void CommLog(const char* format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    char* logbuf = NULL;
+    vasprintf(&logbuf, format, ap);
+    SYSLOG("%s", logbuf);
+    free(logbuf);
+    va_end(ap);
+}
+
 int main(int argc, char * argv[]) {
+    
+    enableCommLog(CommLog, CommLog);
 
     if(argc >= 2)
     {
@@ -17,6 +30,9 @@ int main(int argc, char * argv[]) {
             } else if(strcmp(argv[1], "unbootstrap")==0) {
                 int unbootstrap();
                 exit(unbootstrap());
+            } else if(strcmp(argv[1], "exploit")==0) {
+                int exploitStart();
+                exit(exploitStart(@(argv[2])));
             } else if(strcmp(argv[1], "enableapp")==0) {
                 int enableForApp(NSString* bundlePath);
                 exit(enableForApp(@(argv[2])));
@@ -26,6 +42,9 @@ int main(int argc, char * argv[]) {
             } else if(strcmp(argv[1], "rebuildiconcache")==0) {
                 int rebuildIconCache();
                 exit(rebuildIconCache());
+            } else if(strcmp(argv[1], "hidebootstrapapp")==0) {
+                int hideBootstrapApp(BOOL usreboot);
+                exit(hideBootstrapApp(argc==3 && strcmp(argv[2],"usreboot")==0));
             } else if(strcmp(argv[1], "reboot")==0) {
                 sync();
                 sleep(1);
